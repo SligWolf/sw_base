@@ -26,6 +26,7 @@ SLIGWOLF_ADDON.g_themeConfigsOrdered = {}
 SLIGWOLF_ADDON.g_themeConfigsDefaults = {}
 SLIGWOLF_ADDON.g_themeConfigsRandomPickers = {}
 SLIGWOLF_ADDON.g_themeConfigsPlayerColored = {}
+SLIGWOLF_ADDON.g_themeConfigsInvalidateCache = {}
 
 local g_themeParamKeys = LIBThemesystem.g_themeParamKeys
 
@@ -382,18 +383,15 @@ function SLIGWOLF_ADDON:ThemeAddConfig(category, name, config)
 
 	themeConfig.isDefault = false
 
-	if config.isDefault and not self.g_themeConfigsDefaults[category] then
-		self.g_themeConfigsDefaults[category] = themeConfig
+	if config.isDefault then
 		themeConfig.isDefault = true
 	end
 
-	if config.isRandom and not self.g_themeConfigsRandomPickers[category] then
-		self.g_themeConfigsRandomPickers[category] = themeConfig
+	if config.isRandom then
 		themeConfig.isRandom = true
 	end
 
-	if config.isPlayerColored and not self.g_themeConfigsPlayerColored[category] then
-		self.g_themeConfigsPlayerColored[category] = themeConfig
+	if config.isPlayerColored then
 		themeConfig.isPlayerColored = true
 	end
 
@@ -422,7 +420,11 @@ function SLIGWOLF_ADDON:ThemeAddConfig(category, name, config)
 	self.g_themeConfigsOrdered[category] = {}
 	self.g_themeConfigsForRandom[category] = {}
 
-	self:ThemeAddConvar(category)
+	self.g_themeConfigsInvalidateCache[category] = true
+
+	if config.isDefault then
+		self:ThemeAddConvar(category)
+	end
 end
 
 function SLIGWOLF_ADDON:ThemeGetConfig(category, name, resolveRandom)
@@ -503,6 +505,58 @@ function SLIGWOLF_ADDON:ThemeGetConfigs(category)
 	return themeConfigsOrdered
 end
 
+function SLIGWOLF_ADDON:ThemeBuildConfigsCache(category)
+	category = tostring(category or "")
+
+	if category == "" then
+		return
+	end
+
+	if not self.g_themeConfigsInvalidateCache[category] then
+		return
+	end
+
+	local themeConfigs = self:ThemeGetConfigs(category)
+	if not themeConfigs then
+		return
+	end
+
+	self.g_themeConfigsDefaults[category] = nil
+	self.g_themeConfigsRandomPickers[category] = nil
+	self.g_themeConfigsPlayerColored[category] = nil
+
+	for i, themeConfig in ipairs(themeConfigs) do
+		if themeConfig.isDefault and not self.g_themeConfigsDefaults[category] then
+			self.g_themeConfigsDefaults[category] = themeConfig
+		end
+
+		if themeConfig.isRandom and not self.g_themeConfigsRandomPickers[category] then
+			self.g_themeConfigsRandomPickers[category] = themeConfig
+		end
+
+		if themeConfig.isPlayerColored and not self.g_themeConfigsPlayerColored[category] then
+			self.g_themeConfigsPlayerColored[category] = themeConfig
+		end
+	end
+
+	self.g_themeConfigsInvalidateCache[category] = nil
+end
+
+function SLIGWOLF_ADDON:ThemeHasSupport(category)
+	category = tostring(category or "")
+
+	if category == "" then
+		return false
+	end
+
+	local themeConfigs = self.g_themeConfigs[category]
+	if not themeConfigs then
+		return false
+	end
+
+	return true
+end
+
 function SLIGWOLF_ADDON:ThemeGetDefaultConfig(category)
 	category = tostring(category or "")
 
@@ -510,24 +564,18 @@ function SLIGWOLF_ADDON:ThemeGetDefaultConfig(category)
 		return nil
 	end
 
-	local defaultThemeConfig = self.g_themeConfigsDefaults[category]
-	if defaultThemeConfig then
-		defaultThemeConfig.isDefault = true
-		return defaultThemeConfig
-	end
-
-	local themeConfigs = self:ThemeGetConfigs(category)
-	if not themeConfigs then
+	if not self:ThemeHasSupport(category) then
 		return nil
 	end
 
-	-- Pick first item as default in this failback
-	for i, themeConfig in ipairs(themeConfigs) do
-		self.g_themeConfigsDefaults[category] = themeConfig
-		themeConfig.isDefault = true
-		return themeConfig
+	self:ThemeBuildConfigsCache(category)
+
+	local defaultThemeConfig = self.g_themeConfigsDefaults[category]
+	if defaultThemeConfig then
+		return defaultThemeConfig
 	end
 
+	LIBPrint.ErrorNoHaltWithStack("No default theme found for category '%s' for addon '%s'.", category, self.Addonname)
 	return nil
 end
 
@@ -538,9 +586,10 @@ function SLIGWOLF_ADDON:ThemeGetRandomPickerConfig(category)
 		return nil
 	end
 
+	self:ThemeBuildConfigsCache(category)
+
 	local randomPickerThemeConfig = self.g_themeConfigsRandomPickers[category]
 	if randomPickerThemeConfig then
-		randomPickerThemeConfig.isRandom = true
 		return randomPickerThemeConfig
 	end
 
@@ -554,9 +603,10 @@ function SLIGWOLF_ADDON:ThemeGetPlayerColoredConfig(category)
 		return nil
 	end
 
+	self:ThemeBuildConfigsCache(category)
+
 	local playerColoredThemeConfig = self.g_themeConfigsPlayerColored[category]
 	if playerColoredThemeConfig then
-		playerColoredThemeConfig.isPlayerColored = true
 		return playerColoredThemeConfig
 	end
 
